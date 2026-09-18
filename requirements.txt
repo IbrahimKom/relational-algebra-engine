@@ -1,1 +1,2 @@
 pytest>=7.0
+matplotlib>=3.5  # report-only, for perf/plot_results.py -- not used by src/
