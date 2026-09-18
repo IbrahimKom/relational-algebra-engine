@@ -163,5 +163,19 @@ passes over a fully materialized intermediate relation is a trap the
 spec's own wording invites -- worth being suspicious of any operator
 defined "as A followed by B" when A can be enormous and B is a filter.
 
-**Next:** re-run the full experiment with the fixed join, fill in
-REPORT.md's table and the log-log analysis.
+**Result:** full 1000→64000 run completed in ~81 minutes (down from an
+estimated ~2 hours with the old implementation, and it would have needed
+tens of GB of RAM to even finish at 32000/64000 rather than just being
+slow). Comparisons matched `n*m` exactly at every size, log-log slope of
+wall time vs n came out to ≈2.095 (predicted: ≈2, for an `O(n^2)`
+algorithm) -- both filled into REPORT.md along with the select/project
+comparison and the 1,000,000-tuple extrapolation (≈10.5 days, showing why
+that size isn't run). Match-rate sub-study rerun in isolation on the fixed
+implementation for a clean number: match rate changes neither comparison
+count nor wall time, as expected for a nested-loop join with no index.
+
+**Project status:** engine, grammar doc, error handling, tests, and
+performance study are all done and pushed. What's left is entirely on me:
+re-read `src/lexer.py`/`parser.py`/`interpreter.py` cold until I can
+explain every line without notes (see ORAL_PREP.md), then record the
+5-minute video.
