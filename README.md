@@ -1,6 +1,6 @@
 # Relational Algebra Engine
 
-COMP 3005 Bonus Project 1 (Fall 2026). A hand-written tokenizer, recursive
+A hand-written tokenizer, recursive
 descent parser, and tree-walking evaluator for the relational algebra
 language specified in the assignment. See [GRAMMAR.md](GRAMMAR.md) for the
 full grammar, precedence rules, and design justification, and
