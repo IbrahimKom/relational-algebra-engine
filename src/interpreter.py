@@ -83,16 +83,27 @@ def evaluate(node, env):
     if isinstance(node, ast.Join):
         left = evaluate(node.left, env)
         right = evaluate(node.right, env)
-        product = _do_times(left, right, node)
-        # join[c] is times followed by select[c] (spec 4.3): every pair in
-        # the product is compared against the condition exactly once. This
-        # is computed directly (rather than incremented in a second loop
-        # over product.tuples) so it isn't double-counted against the pair
-        # count already implicit in how `product` was built.
+        # join[c] is defined as times followed by select[c] (spec 4.3), and
+        # that's the schema this produces -- but it is NOT implemented by
+        # literally materializing the full cross product first: for two
+        # 64,000-tuple inputs that's 4+ billion tuples held in memory at
+        # once before a single one gets filtered out, which is a memory
+        # blowup bug, not a faithful "nested loop join" (see DESIGN_LOG.md,
+        # AI assistance issue #4). Instead, pairs are streamed one at a
+        # time and only the ones that pass the condition are ever added to
+        # a set -- the same O(n*m) *comparisons* the spec wants counted,
+        # without ever holding the whole product in memory.
+        combined = _combine_schema(left, right, node)
+        schema_only = Relation(left.name, combined, ())  # attrs only, for name resolution
         COUNTERS["join_compared"] += len(left.tuples) * len(right.tuples)
-        cache = {}  # see the matching comment in the Select branch above
-        kept = {row for row in product.tuples if _eval_cond(node.cond, row, product, cache)}
-        return Relation(product.name, product.attrs, kept)
+        cache = {}
+        kept = set()
+        for lrow in left.tuples:
+            for rrow in right.tuples:
+                row = lrow + rrow
+                if _eval_cond(node.cond, row, schema_only, cache):
+                    kept.add(row)
+        return Relation(left.name, combined, kept)
 
     raise AssertionError(f"unhandled AST node {node!r}")
 
@@ -111,7 +122,10 @@ def evaluate(node, env):
 # the two sides have different identities ("E2" vs "Emp") at the moment of
 # the join even though they both started from the same base relation.
 
-def _do_times(left, right, node):
+def _combine_schema(left, right, node):
+    """The qualified attribute list times/join produce, plus the collision
+    check -- schema-only, no tuple data touched, so it's cheap even when
+    the relations themselves are huge."""
     def qualify(attrs, owner_name):
         return [Attr(a.qualifier if a.qualifier else owner_name, a.name) for a in attrs]
 
@@ -124,7 +138,14 @@ def _do_times(left, right, node):
                 f"'{left.name}' and '{right.name}' -- use rename[...] on one "
                 f"side to disambiguate", node.line, node.col)
         seen.add(a.qualified_name)
+    return combined
 
+
+def _do_times(left, right, node):
+    # unlike Join (below), a bare `times` genuinely has to produce the full
+    # cross product as its result -- there's no filter to stream through --
+    # so materializing it here is the actual semantics, not a shortcut.
+    combined = _combine_schema(left, right, node)
     tuples = {lrow + rrow for lrow in left.tuples for rrow in right.tuples}
     return Relation(left.name, combined, tuples)
 

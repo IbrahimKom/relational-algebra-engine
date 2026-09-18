@@ -118,3 +118,50 @@ gap "run your own code" is supposed to surface. Fixed with an explicit
 
 **Next:** performance study — data generator, instrumentation is already
 wired in from issue #2, then the Section 8.3 experiment table.
+
+---
+
+## 2026-09-18 — Performance run blew up memory; fixed the join implementation
+
+**Goal:** run the real Section 8.3 experiment (1000→64000 tuples) in the
+background and fill in REPORT.md.
+
+**What happened:** the background run finished n=1000/2000/4000/8000 on
+schedule (matching the earlier small-scale estimate of ~1.3–1.5μs per
+comparison), then went completely silent partway through n=16000 -- no
+progress for over an hour. Checked `tasklist`: the python process was
+still alive, but sitting at **8.26 GB of RAM** and climbing. Killed it
+before it got to 32000/64000, where the same bug would have needed
+tens of gigabytes.
+
+**AI assistance issue #4 (the big one):** `join[c]` is defined in the spec
+as "times followed by select[c]", and Claude's first implementation took
+that literally -- `_do_times()` built the *entire* cross product as a
+materialized Python `set` of concatenated tuples, and only then filtered
+it by the condition. That's fine semantically (same result), but at
+n=m=16000 that's 256,000,000 tuples held in memory *simultaneously*
+before a single one gets discarded -- and at n=m=64000 it would have been
+4.1 billion. This is a real memory-blowup bug, not just "slow because
+nested loops," and it only showed up by actually running the experiment
+at a size big enough to hit it -- nothing in the 25 correctness test
+cases (all tiny relations) or a code read would have caught it, since the
+code is *correct*, just not implementable at scale.
+
+**Fix:** split `_do_times` into `_combine_schema` (the cheap
+schema/collision-check part, no tuple data) and the tuple-materializing
+part. `times` (used standalone) still has to materialize the full
+product, because that IS its result. But `Join` now streams pairs
+directly -- one nested loop, evaluate the condition per pair, only add
+matches to the output set -- so peak memory is proportional to the
+*output* size, not `n*m`. Verified: n=16000 went from "not done after an
+hour, 8+ GB RAM" to 190 seconds, and was faster per comparison too
+(0.74μs vs. ~1.4μs before), because it's no longer paying set-insertion
+and hashing costs for 256 million tuples that were about to be thrown
+away anyway. Lesson: "times followed by select" is the right way to
+*specify* what join means, but implementing it as two literal sequential
+passes over a fully materialized intermediate relation is a trap the
+spec's own wording invites -- worth being suspicious of any operator
+defined "as A followed by B" when A can be enormous and B is a filter.
+
+**Next:** re-run the full experiment with the fixed join, fill in
+REPORT.md's table and the log-log analysis.
