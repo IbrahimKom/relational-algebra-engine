@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+perf/_perf_data/
+perf/_mr_tmp/
+perf/run.log
