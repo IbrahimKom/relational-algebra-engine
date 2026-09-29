@@ -1,11 +1,22 @@
 # REPORT.md — Performance Study
 
-All numbers below are measured, not estimated, from the current
-implementation (`git log` for the exact commit). The first run of this
-experiment found a real bug -- see DESIGN_LOG.md, "AI assistance issue
-#4" -- the join was materializing the full cross product in memory before
-filtering it, which made n=16000 hang for over an hour at 8+ GB of RAM.
-Every number here is from the fixed, streaming join.
+**Status: table below is from the previous implementation of the join
+counter and needs a rerun.** The counting *method* changed after a course
+forum clarification (Section 8.2 was rewritten to require the counter
+incremented literally inside the per-pair loop rather than computed as
+`len(left)*len(right)`) -- the resulting count is mathematically identical
+either way, so the `comparisons` column below is still correct, but wall
+times should be re-measured against the exact code being submitted. See
+DESIGN_LOG.md for the full story.
+
+All numbers below are measured, not estimated, from the implementation at
+the time of the run (`git log` for the exact commit each table came from).
+The first run of this experiment found a real bug -- see DESIGN_LOG.md,
+"AI assistance issue #4" -- the join was materializing the full cross
+product in memory before filtering it, which made n=16000 hang for over
+an hour at 8+ GB of RAM. Every number below is from the fixed, streaming
+join; the wall-time column just needs one more refresh for the counter
+rewrite.
 
 ## Machine
 
@@ -27,11 +38,18 @@ Every number here is from the fixed, streaming join.
   times exactly one call to `evaluate()` for `R join[R.b=S.b] S` with
   `time.perf_counter()`, and reads `join_compared` off
   `src.interpreter.COUNTERS` immediately after.
-- `join_compared` is incremented as `len(left.tuples) * len(right.tuples)`
-  at the point of evaluating a `Join` node -- i.e. once per pair the
-  nested loop actually visits, computed directly rather than incremented
-  in a loop (see DESIGN_LOG.md, "AI assistance issue #2" -- an earlier
-  draft double-counted this).
+- `join_compared` is incremented once per pair, literally inside the
+  nested loop, immediately before the join condition's result is known --
+  matching the course forum's Section 8.2 rewrite: "a counter inside your
+  join implementation, incremented once for every pair of tuples the join
+  condition is evaluated on, whether or not the pair matches." (An earlier
+  version computed this as `len(left.tuples) * len(right.tuples)` up
+  front -- the exact same number, since nothing in the loop ever skips a
+  pair, but the rewritten spec asks for a literal per-pair counter, so
+  that's what's there now. See DESIGN_LOG.md for the earlier
+  double-counting bug this replaced.) `select_examined` is the matching
+  per-operator counter for `select`, incremented once per tuple the
+  selection condition is evaluated on.
 - To reproduce: `python -m perf.run_experiment --out perf/results.csv`
   (add `--sizes` / `--match-rate` / `--seed` to change the run; expect
   roughly 80 minutes for the default 1000–64000 range on comparable

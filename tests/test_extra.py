@@ -5,7 +5,7 @@ each individually exercise, plus a few tokenizer/loader edge cases.
 import os
 import pytest
 
-from src.errors import NameResolutionError, SchemaError
+from src.errors import NameResolutionError, SchemaError, TypeCheckError
 from tests.helpers import load_env, run, tree, parse
 
 FIXTURES = os.path.join(os.path.dirname(__file__), "fixtures")
@@ -90,6 +90,25 @@ def test_duplicate_tuples_collapse_to_one(tmp_path):
 def test_decimal_numbers_are_supported():
     t = tree("select[Price>19.99](R)")
     assert "Num(19.99)" in t
+
+
+def test_type_error_applies_to_equality_not_just_ordering(employees_env):
+    # Course forum clarification (prof, re: Logan's question on Section 6.3):
+    # "Do not allow comparisons between different types. Any comparison
+    # between a string and a number is a type error, including = and !=."
+    with pytest.raises(TypeCheckError):
+        run(employees_env, "select[Age='30'](Employees)")
+    with pytest.raises(TypeCheckError):
+        run(employees_env, "select[Age!='30'](Employees)")
+
+
+def test_same_type_comparisons_all_work(employees_env):
+    # same-type comparisons are fine with every operator, including a
+    # column against another column of the same type (case 18 covers =;
+    # this rounds out the rest)
+    assert len(run(employees_env, "select[Age!=999](Employees)").tuples) == 3
+    assert len(run(employees_env, "select[Age<999](Employees)").tuples) == 3
+    assert len(run(employees_env, "select[Name!='Zzz'](Employees)").tuples) == 3
 
 
 def test_relation_named_like_a_keyword_still_resolves(tmp_path):

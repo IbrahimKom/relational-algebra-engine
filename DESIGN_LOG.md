@@ -179,3 +179,55 @@ performance study are all done and pushed. What's left is entirely on me:
 re-read `src/lexer.py`/`parser.py`/`interpreter.py` cold until I can
 explain every line without notes (see ORAL_PREP.md), then record the
 5-minute video.
+
+---
+
+## 2026-09-29 — Cross-checked against the course forum Q&A
+
+**Goal:** go through the professor's forum answers to other students'
+questions and make sure the implementation actually matches what's being
+asked for, since the assignment PDF alone left some things ambiguous.
+
+**What I checked against six forum Q&As:**
+- Tokenizer/one-AST/panic-mode error handling (Amiras's Q1) -- already
+  matched exactly: `>=` is one token, `--tree` and execution share the
+  same AST, parser raises on the first syntax error with no recovery.
+- `rename` is in-memory only (Q5) -- already true; `Rename` evaluation
+  never touches `env`.
+- Type errors apply to `=`/`!=`, not just ordering operators (Logan's Q6)
+  -- already true (the type check in `_eval_cond` runs before the
+  operator is even looked at), but added two regression tests
+  (`test_type_error_applies_to_equality_not_just_ordering`,
+  `test_same_type_comparisons_all_work`) to `tests/test_extra.py` so it's
+  explicitly locked in and citable.
+- Match rate should be varied and its impact reported (Q2) -- already
+  covered by the Section 8.4 Q5 sub-study from the previous session.
+
+**AI assistance issue #5:** Section 8.2 originally read "increment once
+for every pair of tuples your join compares, and once for every tuple
+your selection examines" -- ambiguous enough that another student asked
+about it, and the professor rewrote it. The rewrite requires "a counter
+inside your join implementation, incremented once for every pair of
+tuples the join condition is evaluated on" -- i.e. a literal per-pair
+`+= 1` sitting inside the nested loop. Claude's implementation computed
+the exact same number as `len(left.tuples) * len(right.tuples)` up front
+instead, which is mathematically identical (nothing in the loop ever
+skips a pair) but isn't what the rewritten instruction literally asks
+for, and is a worse answer to "where in your code does the counting
+happen" during the oral check. Fixed: moved the increment to a plain
+local variable bumped once per iteration inside the loop, flushed to
+`COUNTERS` after the loop (a bare `COUNTERS[...] += 1` per pair added a
+genuine ~60% wall-time regression at n=4000 from repeated dict lookups
+across billions of iterations -- confirmed by timing both versions back
+to back -- so the local-variable version keeps the literal per-pair
+semantics without that cost). Lesson: when a course clarification changes
+*how* something must be computed, check whether the "obviously correct
+and slightly faster" version Claude already wrote is still an acceptable
+implementation of the newly-precise wording, even when the output value
+doesn't change.
+
+**Still needs doing:** REPORT.md's wall-time numbers were measured before
+this fix and need a fresh run. The count values are unaffected (same
+math), but wall time isn't, and current background CPU load (Discord/
+Spotify eating cycles) makes right now a noisy time to measure anyway --
+rerun when the machine is quiet.

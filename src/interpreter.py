@@ -95,14 +95,24 @@ def evaluate(node, env):
         # without ever holding the whole product in memory.
         combined = _combine_schema(left, right, node)
         schema_only = Relation(left.name, combined, ())  # attrs only, for name resolution
-        COUNTERS["join_compared"] += len(left.tuples) * len(right.tuples)
         cache = {}
         kept = set()
+        pairs_compared = 0
         for lrow in left.tuples:
             for rrow in right.tuples:
                 row = lrow + rrow
+                # counted here, unconditionally, before the condition's
+                # result is known -- every pair gets compared, whether or
+                # not it matches, because there's no way to know without
+                # comparing it (course forum, Section 8.2 rewrite). A plain
+                # local variable, not COUNTERS directly, so 4+ billion
+                # pairs don't each pay a dict lookup -- it's flushed to
+                # COUNTERS once, after the loop, but every pair still gets
+                # its own increment during the loop.
+                pairs_compared += 1
                 if _eval_cond(node.cond, row, schema_only, cache):
                     kept.add(row)
+        COUNTERS["join_compared"] += pairs_compared
         return Relation(left.name, combined, kept)
 
     raise AssertionError(f"unhandled AST node {node!r}")
