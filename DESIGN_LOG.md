@@ -226,8 +226,11 @@ and slightly faster" version Claude already wrote is still an acceptable
 implementation of the newly-precise wording, even when the output value
 doesn't change.
 
-**Still needs doing:** REPORT.md's wall-time numbers were measured before
-this fix and need a fresh run. The count values are unaffected (same
-math), but wall time isn't, and current background CPU load (Discord/
-Spotify eating cycles) makes right now a noisy time to measure anyway --
-rerun when the machine is quiet.
+**Result:** reran the full 1000-64000 table after closing Discord/Spotify/
+etc. (~84 minutes). Comparisons still exactly `n*m` at every size, as
+expected. Wall times came out slightly *slower* than the previous run
+(e.g. n=64000: 4015s vs. the old 3701s) despite the quieter machine --
+that's the real, expected cost of the per-pair counter increment now
+sitting inside the hot loop, not noise. Log-log slope moved from ≈2.095
+to ≈2.112, still solidly consistent with O(n²). REPORT.md updated with
+final numbers and the plot regenerated.

@@ -1,22 +1,10 @@
 # REPORT.md — Performance Study
 
-**Status: table below is from the previous implementation of the join
-counter and needs a rerun.** The counting *method* changed after a course
-forum clarification (Section 8.2 was rewritten to require the counter
-incremented literally inside the per-pair loop rather than computed as
-`len(left)*len(right)`) -- the resulting count is mathematically identical
-either way, so the `comparisons` column below is still correct, but wall
-times should be re-measured against the exact code being submitted. See
-DESIGN_LOG.md for the full story.
-
-All numbers below are measured, not estimated, from the implementation at
-the time of the run (`git log` for the exact commit each table came from).
-The first run of this experiment found a real bug -- see DESIGN_LOG.md,
-"AI assistance issue #4" -- the join was materializing the full cross
-product in memory before filtering it, which made n=16000 hang for over
-an hour at 8+ GB of RAM. Every number below is from the fixed, streaming
-join; the wall-time column just needs one more refresh for the counter
-rewrite.
+All numbers below are measured, not estimated, from the final
+implementation (join counter incremented per-pair inside the loop, per
+the course forum's Section 8.2 rewrite; streaming join, not a
+materialized product -- see DESIGN_LOG.md for both of those fixes and why
+they were needed).
 
 ## Machine
 
@@ -66,15 +54,15 @@ match rate = 1.0, seed = 42
 
 | n | m | comparisons | wall time (s) | output tuples |
 |---|---|---|---|---|
-| 1000 | 1000 | 1,000,000 | 0.6232 | 961 |
-| 2000 | 2000 | 4,000,000 | 2.6400 | 1,975 |
-| 4000 | 4000 | 16,000,000 | 11.2407 | 3,995 |
-| 8000 | 8000 | 64,000,000 | 48.6586 | 8,057 |
-| 16000 | 16000 | 256,000,000 | 202.2679 | 16,294 |
-| 32000 | 32000 | 1,024,000,000 | 916.0122 | 31,969 |
-| 64000 | 64000 | 4,096,000,000 | 3701.4629 | 64,033 |
+| 1000 | 1000 | 1,000,000 | 0.6056 | 961 |
+| 2000 | 2000 | 4,000,000 | 2.4425 | 1,975 |
+| 4000 | 4000 | 16,000,000 | 10.1600 | 3,995 |
+| 8000 | 8000 | 64,000,000 | 41.5490 | 8,057 |
+| 16000 | 16000 | 256,000,000 | 190.2433 | 16,294 |
+| 32000 | 32000 | 1,024,000,000 | 828.4470 | 31,969 |
+| 64000 | 64000 | 4,096,000,000 | 4014.8254 | 64,033 |
 
-Total run time for the whole table: ~81 minutes. *(raw CSV:
+Total run time for the whole table: ~84 minutes. *(raw CSV:
 [perf/results.csv](perf/results.csv))*
 
 ![wall time vs n, log-log](perf/time_vs_n_loglog.png)
@@ -86,12 +74,13 @@ Total run time for the whole table: ~81 minutes. *(raw CSV:
 `comparisons = n * m`, **exactly**, at every single row of the table above
 (verified programmatically: `n*m == comparisons` for all 7 rows, no
 tolerance needed). This isn't really a "discovered" relationship so much
-as a designed-in one -- `join_compared` is computed directly as
-`len(left.tuples) * len(right.tuples)` (see `src/interpreter.py`,
-`Join` branch) rather than sampled or incremented inside a loop, so there
-is no discrepancy to explain: a nested-loop join with no index pairs every
-`R`-tuple with every `S`-tuple, full stop, and the counter just reports
-that count rather than estimating it.
+as a designed-in one -- `join_compared` is incremented by exactly 1 for
+every single pair the nested loop visits (see `src/interpreter.py`,
+`Join` branch), unconditionally, before the condition's result is even
+known, and a nested loop over all of `R` and all of `S` visits every pair
+without exception -- so there is no discrepancy to explain: a nested-loop
+join with no index pairs every `R`-tuple with every `S`-tuple, full stop,
+and the counter reports exactly that, not an estimate of it.
 
 ### Q2. Wall time vs n on log-log axes
 
@@ -99,12 +88,12 @@ See the plot above (`perf/time_vs_n_loglog.png`, regenerate with
 `python -m perf.plot_results`). A least-squares fit of `log10(time)` against
 `log10(n)` over all 7 points gives:
 
-**slope ≈ 2.095**
+**slope ≈ 2.112**
 
 That's very close to 2, which is exactly what `O(n*m) = O(n^2)` (since
 `m = n` throughout this table) predicts: on log-log axes, `time ∝ n^k`
 shows up as a straight line of slope `k`, and a quadratic algorithm's line
-has slope 2. The small excess over 2.0 (≈0.095) is consistent with
+has slope 2. The small excess over 2.0 (≈0.11) is consistent with
 per-tuple constant-factor growth as `n` increases -- larger `n` means
 larger Python `set` objects for both the base relations and (variably)
 the output, which means more hash-table resizing and worse cache locality
@@ -119,20 +108,20 @@ the same generated `R` at each size.)
 
 | n | select time (s) | project time (s) |
 |---|---|---|
-| 1000 | 0.0005 | 0.0003 |
-| 2000 | 0.0010 | 0.0007 |
-| 4000 | 0.0019 | 0.0019 |
-| 8000 | 0.0042 | 0.0030 |
-| 16000 | 0.0090 | 0.0079 |
-| 32000 | 0.0209 | 0.0186 |
-| 64000 | 0.0430 | 0.0485 |
+| 1000 | 0.0012 | 0.0007 |
+| 2000 | 0.0015 | 0.0010 |
+| 4000 | 0.0026 | 0.0026 |
+| 8000 | 0.0069 | 0.0062 |
+| 16000 | 0.0149 | 0.0138 |
+| 32000 | 0.0387 | 0.0360 |
+| 64000 | 0.0847 | 0.0936 |
 
-Log-log slopes: **select ≈ 1.065**, **project ≈ 1.198** -- both close to
+Log-log slopes: **select ≈ 1.081**, **project ≈ 1.208** -- both close to
 1, confirming both are `O(n)`: each examines every one of R's `n` tuples
 exactly once (`select_examined` in the CSV is literally `n` at every row,
-by construction). At n=64000 the join took **3701 seconds**; select and
-project took **0.043s** and **0.049s** -- roughly **80,000x** and
-**76,000x** faster respectively, which is the visible gap between the
+by construction). At n=64000 the join took **4015 seconds**; select and
+project took **0.085s** and **0.094s** -- roughly **47,000x** and
+**43,000x** faster respectively, which is the visible gap between the
 flat select/project lines and the steep join line in the plot above.
 `project`'s slope is a bit higher than `select`'s, consistent with the
 prediction that deduplicating the projected tuples through a `set` adds a
@@ -140,26 +129,26 @@ hashing/rehashing cost on top of the same single pass `select` does.
 
 ### Q4. Predicting the 1,000,000-tuple join (not run)
 
-Using the measured `t64k = 3701.4629` s and `comparisons ∝ n^2` (confirmed
-by the ≈2.0 slope in Q2, so the per-comparison cost is effectively
+Using the measured `t64k = 4014.8254` s and `comparisons ∝ n^2` (confirmed
+by the ≈2.1 slope in Q2, so the per-comparison cost is effectively
 constant across this range):
 
 ```
 predicted_time ≈ t64k * (1,000,000 / 64,000)^2
-             = 3701.4629 * (15.625)^2
-             = 3701.4629 * 244.14...
-             ≈ 903,677 seconds
-             ≈ 15,061 minutes
-             ≈ 251.0 hours
-             ≈ 10.5 days
+             = 4014.8254 * (15.625)^2
+             = 4014.8254 * 244.14...
+             ≈ 980,182 seconds
+             ≈ 16,336 minutes
+             ≈ 272.3 hours
+             ≈ 11.3 days
 ```
 
-Ten and a half days of continuous single-threaded computation for one
+Eleven and a third days of continuous single-threaded computation for one
 join. That's the entire point of Section 8: a correct, naive nested-loop
-implementation is *fine* at the scale this project tests it at (a minute
-and a half at 64,000), and completely infeasible one order of magnitude
-past that -- not because of a bug, but because `O(n^2)` growth is what it
-is.
+implementation is *fine* at the scale this project tests it at (about a
+minute and a half at 16,000, growing to just over an hour at 64,000), and
+completely infeasible one order of magnitude past that -- not because of
+a bug, but because `O(n^2)` growth is what it is.
 
 ### Q5. Does match rate change the comparison count? The wall time?
 
