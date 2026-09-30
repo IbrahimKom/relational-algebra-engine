@@ -234,3 +234,33 @@ that's the real, expected cost of the per-pair counter increment now
 sitting inside the hot loop, not noise. Log-log slope moved from ≈2.095
 to ≈2.112, still solidly consistent with O(n²). REPORT.md updated with
 final numbers and the plot regenerated.
+
+---
+
+## 2026-09-30 — Reading my own code before the video/oral check, found dead code
+
+**Goal:** actually read through `src/` myself, file by file, instead of just
+having it explained to me, before recording the required video.
+
+**What I did:** went through `tokens.py`, `lexer.py`, `parser.py`, and
+`interpreter.py` line by line. Asked about a couple of Python syntax
+things I didn't recognize (`Enum`/`auto()`, `__slots__`) and got those
+cleared up.
+
+**AI assistance issue #6:** while reading `tokens.py` I asked what
+`RELATIONAL_KEYWORDS` and `CONDITION_KEYWORDS` were for. Checked with a
+grep across `src/` -- they were imported into `parser.py` but never
+actually referenced anywhere; every real keyword check in the parser
+(`check_kw("union", "minus")`, `check_kw("or")`, etc.) uses its own
+hardcoded literal strings per precedence tier instead, because each tier
+needs a different subset of keywords, not the whole blob. Claude had left
+these two sets in from an earlier draft of the soft-keyword design and
+never cleaned them up once the parser settled on per-tier literals. Fixed
+by deleting both unused sets and the now-unused import, and moving the
+design-rationale comment that used to sit above them to `check_kw` itself
+in parser.py, where it actually describes real, currently-running code.
+Lesson: dead code doesn't just sit there harmlessly -- it's an easy way to
+get caught flat-footed in an oral check if someone points at it and asks
+"what's this for" and the honest answer turns out to be "nothing." Reading
+my own code start to finish, not just the parts I was walked through, is
+what caught this.

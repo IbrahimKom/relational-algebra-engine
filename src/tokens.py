@@ -46,11 +46,3 @@ class Token:
 
     def __repr__(self):
         return f"Token({self.type.name}, {self.text!r}, {self.line}:{self.col})"
-
-
-# Words that are only treated as operators when the parser is at a grammar
-# position expecting one (see GRAMMAR.md Section 2.3). The lexer does not
-# use this set at all -- it always emits IDENT for word tokens.
-RELATIONAL_KEYWORDS = {"select", "project", "rename",
-                        "union", "intersect", "minus", "times", "join"}
-CONDITION_KEYWORDS = {"and", "or", "not"}

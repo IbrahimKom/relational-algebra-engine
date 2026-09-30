@@ -9,7 +9,7 @@ Two entry points:
       just a bare query expression, used e.g. by `--tree "..."`
 """
 
-from .tokens import TokType, RELATIONAL_KEYWORDS, CONDITION_KEYWORDS
+from .tokens import TokType
 from .errors import ParseError
 from . import ast_nodes as ast
 
@@ -52,6 +52,12 @@ class Parser:
         return self.cur().type == type_
 
     def check_kw(self, *words):
+        # Soft keywords (GRAMMAR.md Section 2.3): the lexer never emits a
+        # keyword token, only IDENT -- so a word only counts as an operator
+        # here, at the exact grammar positions that call check_kw with its
+        # spelling. Anywhere else (e.g. as a Comparison operand), the same
+        # IDENT is just an attribute name. This is what lets `union` be a
+        # column name in `select[union=3](R)` (test case 8).
         t = self.cur()
         return t.type == TokType.IDENT and t.text in words
 
