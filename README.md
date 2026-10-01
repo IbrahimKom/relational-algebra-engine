@@ -73,6 +73,23 @@ string values and comment lines; `select`/`project`/`rename` with their
 conditions with `and`/`or`/`not`/comparisons and qualified (`Rel.attr`)
 or unqualified attribute references.
 
+## Why the self-join (test case 20) needs `rename`
+
+`rename[E2](Emp) join[Emp.MgrID=E2.EID] Emp` matches every employee to
+their manager's own row in the same table. Without `rename`, both sides
+of that `join` are the bare `Emp` relation, so `times`/`join` would try
+to qualify both sides' columns with the same identity (`Emp`) -- producing
+duplicate, ambiguous column names like `Emp.EID` on both sides with no
+way to tell them apart (this is a `SchemaError` in this engine; see
+`test_times_without_rename_on_self_is_ambiguity_error` in
+`tests/test_extra.py`). There is no way to distinguish "the employee" from
+"the employee's manager" in the output schema unless at least one side has
+a different identity first. `rename[E2](Emp)` gives the left side the
+identity `E2` instead of `Emp`, so its columns come out as `E2.EID`,
+`E2.Name`, etc., distinguishable from the right side's `Emp.EID`,
+`Emp.Name`. That's the only reason `rename` exists as an operator at all
+in this language -- it's what makes a relation joinable against itself.
+
 ## Known limitations
 
 - Nulls and three-valued logic: out of scope per the assignment.
